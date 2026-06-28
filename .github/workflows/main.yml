@@ -1,0 +1,68 @@
+name: 定时增量同步外部仓库(不删除本地文件)
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync_task:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出当前仓库代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Git 全局配置(大文件/中文/LFS)
+        run: |
+          git config --global http.postBuffer 1073741824
+          git config --global core.quotepath false
+          git config --global user.name "Auto Sync Bot"
+          git config --global user.email "sync-bot@github.com"
+          git lfs install
+          git lfs track "*.apk" "*.zip" "*.7z" "*.rar"
+          git add .gitattributes || true
+
+      - name: 配置环境变量（自行修改）
+        run: |
+          # 外部源仓库地址
+          echo "SOURCE_REPO=https://github.com/youhunwl/TVAPP.git" >> $GITHUB_ENV
+          # 当前仓库存放同步文件的目录
+          echo "TVAPP" >> $GITHUB_ENV
+          # 同步分支
+          echo "BRANCH=main" >> $GITHUB_ENV
+          # 临时克隆目录
+          echo "TEMP_DIR=tmp_source_clone" >> $GITHUB_ENV
+
+      - name: 克隆外部源仓库（浅克隆提速）
+        run: |
+          rm -rf ${{ env.TEMP_DIR }}
+          git clone --depth 1 -b ${{ env.BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.TEMP_DIR }}
+
+      - name: 增量同步文件（不清空目标目录，只覆盖同名文件）
+        run: |
+          mkdir -p ${{ env.TARGET_FOLDER }}
+          # rsync 说明：
+          # -av 保留权限/目录结构；不加--delete，不会删除目标独有文件
+          rsync -av ${{ env.TEMP_DIR }}/ ${{ env.TARGET_FOLDER }}/
+          rm -rf ${{ env.TEMP_DIR }}
+
+      - name: 检测是否有文件变更
+        id: check_diff
+        run: |
+          git status --porcelain > diff.log
+          if [ -s diff.log ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 提交并推送更新
+        if: steps.check_diff.outputs.changed == 'true'
+        run: |
+          git add ${{ env.TARGET_FOLDER }} .gitattributes
+          git commit -m "Auto incremental sync $(date '+%Y-%m-%d %H:%M')"
+          git push origin ${{ env.BRANCH }}
