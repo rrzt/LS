@@ -42,7 +42,7 @@ jobs:
             [TVBox_live]="https://github.com/Supprise0901/TVBox_live.git" 
              [clash]="https://github.com/clash-download/Clash.git"  
              [fanqiang]="https://github.com/free-nodes/fanqiang.git"  
-
+             [TVAPP]="https://github.com/youhunwl/TVAPP.git" 
         
            
             
